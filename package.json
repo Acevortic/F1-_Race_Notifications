@@ -1,0 +1,27 @@
+{
+  "name": "f1-race-tracker",
+  "version": "1.0.0",
+  "description": "F1 race notification service - Discord + email alerts for qualifying and race sessions",
+  "main": "dist/index.js",
+  "type": "module",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "tsc --watch & node --watch dist/index.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "date-fns": "^4.1.0",
+    "date-fns-tz": "^3.2.0",
+    "node-cron": "^4.2.1",
+    "nodemailer": "^8.0.2"
+  },
+  "devDependencies": {
+    "@types/node": "^25.5.0",
+    "@types/node-cron": "^3.0.11",
+    "@types/nodemailer": "^7.0.11",
+    "typescript": "^5.9.3"
+  }
+}

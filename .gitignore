@@ -1,0 +1,18 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+
+# Environment and secrets (never commit)
+.env
+.env.local
+.env.*.local
+
+# Persisted data (sent.json dedup store)
+data/
+
+# OS and editor
+.DS_Store
+.cursor/
+*.log
