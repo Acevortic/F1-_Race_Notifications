@@ -11,11 +11,12 @@ const SESSION_LABELS: Record<string, string> = {
   sprintRace: "Sprint Race",
 };
 
-/** Discord embed color (decimal). Green, yellow, red for day_before, day_of, one_hour_before */
+/** Discord embed color (decimal). Green, yellow, red for day_before, day_of, one_hour_before; blue for next_race_after */
 const TRIGGER_COLORS: Record<NotificationTrigger, number> = {
   day_before: 0x22c55e,
   day_of: 0xeab308,
   one_hour_before: 0xef4444,
+  next_race_after: 0x3b82f6,
 };
 
 /** Country name to flag emoji (common F1 host countries) */
@@ -61,6 +62,8 @@ export function plainText(n: PendingNotification): string {
       return `${s.raceName} ${label} is today at ${s.startLocalFormatted}`;
     case "one_hour_before":
       return `${s.raceName} ${label} starts in 1 hour!`;
+    case "next_race_after":
+      return `Next up: ${s.raceName} at ${s.circuitName} – Race at ${s.startLocalFormatted}`;
     default:
       return `${s.raceName} ${label} at ${s.startLocalFormatted}`;
   }
@@ -89,6 +92,9 @@ export function discordEmbed(n: PendingNotification): DiscordEmbedPayload {
     case "one_hour_before":
       title = `${flag} ${s.raceName} – ${label} in 1 hour!`;
       break;
+    case "next_race_after":
+      title = `${flag} Next race: ${s.raceName}`;
+      break;
     default:
       title = `${flag} ${s.raceName} – ${label}`;
   }
@@ -96,7 +102,9 @@ export function discordEmbed(n: PendingNotification): DiscordEmbedPayload {
   const description =
     n.trigger === "one_hour_before"
       ? `Starts at **${s.startLocalFormatted}**`
-      : `Session starts at **${s.startLocalFormatted}**`;
+      : n.trigger === "next_race_after"
+        ? `Race at **${s.startLocalFormatted}** – ${s.circuitName}, ${s.circuitCity}`
+        : `Session starts at **${s.startLocalFormatted}**`;
 
   return {
     title,
@@ -114,6 +122,9 @@ export function emailHtml(n: PendingNotification): string {
   const label = sessionLabel(s.sessionType);
   const flag = getFlag(s.country);
   const plain = plainText(n);
+  const heading =
+    n.trigger === "next_race_after" ? `Next race: ${s.raceName}` : s.raceName;
+  const subheading = n.trigger === "next_race_after" ? "Race" : label;
 
   return `
 <!DOCTYPE html>
@@ -124,8 +135,8 @@ export function emailHtml(n: PendingNotification): string {
   <title>F1 Reminder</title>
 </head>
 <body style="font-family: system-ui, -apple-system, sans-serif; max-width: 480px; margin: 0 auto; padding: 24px; color: #1a1a1a;">
-  <h1 style="font-size: 1.25rem; margin-bottom: 8px;">${flag} ${s.raceName}</h1>
-  <p style="font-size: 1rem; margin: 0 0 8px 0; color: #333;">${label}</p>
+  <h1 style="font-size: 1.25rem; margin-bottom: 8px;">${flag} ${heading}</h1>
+  <p style="font-size: 1rem; margin: 0 0 8px 0; color: #333;">${subheading}</p>
   <p style="font-size: 1.125rem; font-weight: 600; margin: 0 0 16px 0;">${s.startLocalFormatted}</p>
   <p style="font-size: 0.875rem; color: #666;">${s.circuitName}, ${s.circuitCity}</p>
   <p style="font-size: 0.875rem; color: #888; margin-top: 24px;">${plain}</p>
@@ -144,6 +155,8 @@ export function emailSubject(n: PendingNotification): string {
       return `F1 Reminder: ${s.raceName} ${label} today at ${s.startLocalFormatted}`;
     case "one_hour_before":
       return `F1: ${s.raceName} ${label} starts in 1 hour!`;
+    case "next_race_after":
+      return `F1: Next up – ${s.raceName} at ${s.startLocalFormatted}`;
     default:
       return `F1 Reminder: ${s.raceName} ${label}`;
   }

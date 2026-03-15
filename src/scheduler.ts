@@ -24,6 +24,8 @@ const SENT_FILE = join(DATA_DIR, "sent.json");
 const CHECK_WINDOW_MINUTES = 15;
 const DAY_REMINDER_HOUR = 9;
 const PRUNE_DAYS = 7;
+const RACE_END_OFFSET_HOURS = 2;
+const NEXT_RACE_ANNOUNCE_DELAY_HOURS = 1;
 
 const SESSION_TYPES: { key: keyof ApiRace["schedule"]; type: SessionType }[] = [
   { key: "qualy", type: "qualy" },
@@ -99,6 +101,11 @@ function dayReminderTimeUtc(sessionStartLocal: Date, dayOffset: number): Date {
  * Determine which notifications should fire now.
  * A trigger fires if: now is within [triggerTime, triggerTime + CHECK_WINDOW_MINUTES) and not already sent.
  */
+function getRaceStartUtc(race: ApiRace): Date | null {
+  const slot = race.schedule.race;
+  return parseUtcSlot(slot.date, slot.time);
+}
+
 export async function getPendingNotifications(): Promise<PendingNotification[]> {
   const races = await getSeasonSchedule();
   const season = getSeasonYear();
@@ -107,7 +114,9 @@ export async function getPendingNotifications(): Promise<PendingNotification[]> 
 
   const pending: PendingNotification[] = [];
 
-  for (const race of races) {
+  const racesByRound = [...races].sort((a, b) => a.round - b.round);
+
+  for (const race of racesByRound) {
     for (const { key: scheduleKey, type: sessionType } of SESSION_TYPES) {
       const session = normalizeSession(race, season, sessionType);
       if (!session) continue;
@@ -129,6 +138,41 @@ export async function getPendingNotifications(): Promise<PendingNotification[]> 
         if (now < triggerTime) continue;
         if (now >= windowEnd) continue;
         pending.push({ key, session, trigger });
+      }
+    }
+  }
+
+  // Next-race-after: send once when we're in the window [raceEnd+1h, raceEnd+1h+15min) after the last finished race
+  let lastFinishedRace: ApiRace | null = null;
+  for (let i = racesByRound.length - 1; i >= 0; i--) {
+    const r = racesByRound[i];
+    const raceStartUtc = getRaceStartUtc(r);
+    if (!raceStartUtc) continue;
+    const raceEndUtc = addHours(raceStartUtc, RACE_END_OFFSET_HOURS);
+    if (raceEndUtc < now) {
+      lastFinishedRace = r;
+      break;
+    }
+  }
+  let nextRace: ApiRace | null = null;
+  for (const r of racesByRound) {
+    const raceStartUtc = getRaceStartUtc(r);
+    if (!raceStartUtc) continue;
+    if (raceStartUtc > now) {
+      nextRace = r;
+      break;
+    }
+  }
+  if (lastFinishedRace && nextRace) {
+    const lastRaceStartUtc = getRaceStartUtc(lastFinishedRace)!;
+    const lastRaceEndUtc = addHours(lastRaceStartUtc, RACE_END_OFFSET_HOURS);
+    const triggerTime = addHours(lastRaceEndUtc, NEXT_RACE_ANNOUNCE_DELAY_HOURS);
+    const windowEnd = addMinutes(triggerTime, CHECK_WINDOW_MINUTES);
+    const key = `next_race_after_${lastFinishedRace.raceId}`;
+    if (!sentSet.has(key) && now >= triggerTime && now < windowEnd) {
+      const nextSession = normalizeSession(nextRace, season, "race");
+      if (nextSession) {
+        pending.push({ key, session: nextSession, trigger: "next_race_after" });
       }
     }
   }

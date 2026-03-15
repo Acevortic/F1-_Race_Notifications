@@ -70,7 +70,7 @@ export interface ApiCurrentNextResponse {
 export type SessionType = "qualy" | "race" | "sprintQualy" | "sprintRace";
 
 /** Notification trigger type */
-export type NotificationTrigger = "day_before" | "day_of" | "one_hour_before";
+export type NotificationTrigger = "day_before" | "day_of" | "one_hour_before" | "next_race_after";
 
 /** Normalized session with start time in local (CST) for scheduling */
 export interface NormalizedSession {
