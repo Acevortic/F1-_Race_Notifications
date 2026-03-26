@@ -25,6 +25,7 @@ export async function sendDiscordNotification(n: PendingNotification): Promise<v
         description: embed.description,
         color: embed.color,
         fields: embed.fields,
+        footer: embed.footer,
       },
     ],
   };

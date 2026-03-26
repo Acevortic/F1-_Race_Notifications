@@ -40,15 +40,21 @@ cp .env.example .env
 | Variable              | Required | Description |
 |-----------------------|----------|-------------|
 | `DISCORD_WEBHOOK_URL` | For Discord | Discord webhook URL (Server → Integrations → Webhooks → New Webhook) |
+| `DISCORD_BOT_TOKEN`   | For Discord watch-time replies | Discord bot token (enables listening for your replies and sending “1 hour before” reminders) |
 | `SMTP_HOST`           | For email | SMTP server (e.g. `smtp.gmail.com`) |
 | `SMTP_PORT`           | For email | Usually `587` (TLS) or `465` (SSL) |
 | `SMTP_USER`           | For email | SMTP username (often your email) |
 | `SMTP_PASS`           | For email | SMTP password (Gmail: use an [App Password](https://myaccount.google.com/apppasswords)) |
 | `EMAIL_TO`            | For email | Recipient address (e.g. mom’s email) |
 | `EMAIL_FROM`          | Optional  | Sender address (defaults to `SMTP_USER`) |
+| `SMTP_CONNECTION_TIMEOUT_MS` | Optional | SMTP connection timeout (default `20000`) |
+| `SMTP_SOCKET_TIMEOUT_MS`     | Optional | SMTP socket timeout (default `20000`) |
+| `SMTP_RETRY_COUNT`           | Optional | SMTP transient retry count (default `3`) |
+| `SMTP_RETRY_BASE_DELAY_MS`   | Optional | Retry base backoff delay (default `500`) |
 | `TIMEZONE`            | Optional  | IANA timezone (default: `America/Chicago`) |
 | `F1_SEASON`           | Optional  | Season year (default: current year) |
 | `DATA_DIR`            | Optional  | Directory for `sent.json` (default: `./data`) |
+| `WATCH_PRUNE_DAYS`    | Optional | How long to keep stored watch-time replies (default `14`) |
 
 You can enable only Discord, only email, or both.
 

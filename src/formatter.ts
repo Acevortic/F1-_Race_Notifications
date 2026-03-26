@@ -17,6 +17,7 @@ const TRIGGER_COLORS: Record<NotificationTrigger, number> = {
   day_of: 0xeab308,
   one_hour_before: 0xef4444,
   next_race_after: 0x3b82f6,
+  watch_one_hour_before: 0x8b5cf6,
 };
 
 /** Country name to flag emoji (common F1 host countries) */
@@ -62,6 +63,8 @@ export function plainText(n: PendingNotification): string {
       return `${s.raceName} ${label} is today at ${s.startLocalFormatted}`;
     case "one_hour_before":
       return `${s.raceName} ${label} starts in 1 hour!`;
+    case "watch_one_hour_before":
+      return `Your watch time for ${s.raceName} ${label} is ${s.startLocalFormatted} (starting in 1 hour!)`;
     case "next_race_after":
       return `Next up: ${s.raceName} at ${s.circuitName} – Race at ${s.startLocalFormatted}`;
     default:
@@ -74,6 +77,7 @@ export interface DiscordEmbedPayload {
   description: string;
   color: number;
   fields: { name: string; value: string; inline?: boolean }[];
+  footer?: { text: string };
 }
 
 export function discordEmbed(n: PendingNotification): DiscordEmbedPayload {
@@ -92,6 +96,9 @@ export function discordEmbed(n: PendingNotification): DiscordEmbedPayload {
     case "one_hour_before":
       title = `${flag} ${s.raceName} – ${label} in 1 hour!`;
       break;
+    case "watch_one_hour_before":
+      title = `${flag} ${s.raceName} – Your watch time`;
+      break;
     case "next_race_after":
       title = `${flag} Next race: ${s.raceName}`;
       break;
@@ -100,7 +107,9 @@ export function discordEmbed(n: PendingNotification): DiscordEmbedPayload {
   }
 
   const description =
-    n.trigger === "one_hour_before"
+    n.trigger === "watch_one_hour_before"
+      ? `Your chosen watch time is **${s.startLocalFormatted}**`
+      : n.trigger === "one_hour_before"
       ? `Starts at **${s.startLocalFormatted}**`
       : n.trigger === "next_race_after"
         ? `Race at **${s.startLocalFormatted}** – ${s.circuitName}, ${s.circuitCity}`
@@ -114,6 +123,8 @@ export function discordEmbed(n: PendingNotification): DiscordEmbedPayload {
       { name: "Circuit", value: `${s.circuitName}, ${s.circuitCity}`, inline: true },
       { name: "Session", value: label, inline: true },
     ],
+    // Used by the Discord bot to map a user reply back to the session.
+    footer: { text: n.key },
   };
 }
 
@@ -123,8 +134,13 @@ export function emailHtml(n: PendingNotification): string {
   const flag = getFlag(s.country);
   const plain = plainText(n);
   const heading =
-    n.trigger === "next_race_after" ? `Next race: ${s.raceName}` : s.raceName;
-  const subheading = n.trigger === "next_race_after" ? "Race" : label;
+    n.trigger === "watch_one_hour_before"
+      ? `Watch reminder: ${s.raceName}`
+      : n.trigger === "next_race_after"
+        ? `Next race: ${s.raceName}`
+        : s.raceName;
+  const subheading =
+    n.trigger === "watch_one_hour_before" ? label : n.trigger === "next_race_after" ? "Race" : label;
 
   return `
 <!DOCTYPE html>
@@ -155,6 +171,8 @@ export function emailSubject(n: PendingNotification): string {
       return `F1 Reminder: ${s.raceName} ${label} today at ${s.startLocalFormatted}`;
     case "one_hour_before":
       return `F1: ${s.raceName} ${label} starts in 1 hour!`;
+    case "watch_one_hour_before":
+      return `F1: Your watch time for ${s.raceName} ${label} is in 1 hour!`;
     case "next_race_after":
       return `F1: Next up – ${s.raceName} at ${s.startLocalFormatted}`;
     default:

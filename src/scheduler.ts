@@ -8,10 +8,12 @@ import { toZonedTime, fromZonedTime, formatInTimeZone } from "date-fns-tz";
 import { readFile, writeFile, mkdir } from "fs/promises";
 import { join } from "path";
 import { getSeasonSchedule, getSeasonYear } from "./api.js";
+import { loadWatchRecords } from "./watchStore.js";
 import type {
   ApiRace,
   NormalizedSession,
   PendingNotification,
+  NotificationChannel,
   NotificationTrigger,
   SentRecord,
   SentStore,
@@ -33,6 +35,8 @@ const SESSION_TYPES: { key: keyof ApiRace["schedule"]; type: SessionType }[] = [
   { key: "sprintQualy", type: "sprintQualy" },
   { key: "sprintRace", type: "sprintRace" },
 ];
+
+const CHANNELS: NotificationChannel[] = ["discord", "email"];
 
 function parseUtcSlot(dateStr: string | null, timeStr: string | null): Date | null {
   if (!dateStr || !timeStr) return null;
@@ -76,7 +80,7 @@ function normalizeSession(
   };
 }
 
-function notificationKey(raceId: string, sessionType: SessionType, trigger: NotificationTrigger): string {
+function baseNotificationKey(raceId: string, sessionType: SessionType, trigger: NotificationTrigger): string {
   return `${raceId}_${sessionType}_${trigger}`;
 }
 
@@ -115,6 +119,7 @@ export async function getPendingNotifications(): Promise<PendingNotification[]> 
   const pending: PendingNotification[] = [];
 
   const racesByRound = [...races].sort((a, b) => a.round - b.round);
+  const raceById = new Map(racesByRound.map((r) => [r.raceId, r]));
 
   for (const race of racesByRound) {
     for (const { key: scheduleKey, type: sessionType } of SESSION_TYPES) {
@@ -132,13 +137,61 @@ export async function getPendingNotifications(): Promise<PendingNotification[]> 
       ];
 
       for (const { trigger, triggerTime } of triggers) {
-        const key = notificationKey(race.raceId, sessionType, trigger);
-        if (sentSet.has(key)) continue;
         const windowEnd = addMinutes(triggerTime, CHECK_WINDOW_MINUTES);
         if (now < triggerTime) continue;
         if (now >= windowEnd) continue;
-        pending.push({ key, session, trigger });
+
+        const baseKey = baseNotificationKey(race.raceId, sessionType, trigger);
+        for (const channel of CHANNELS) {
+          const key = `${baseKey}_${channel}`;
+          if (sentSet.has(key)) continue;
+          pending.push({ key, channel, session, trigger });
+        }
       }
+    }
+  }
+
+  // User watch-time reminders (saved from Discord replies).
+  const watchRecords = await loadWatchRecords();
+  for (const wr of watchRecords) {
+    const watchStartUtc = new Date(wr.watchStartUtcIso);
+    const triggerTime = addHours(watchStartUtc, -1);
+    if (now < triggerTime) continue;
+
+    const windowEnd = addMinutes(triggerTime, CHECK_WINDOW_MINUTES);
+    if (now >= windowEnd) continue;
+
+    const race = raceById.get(wr.raceId);
+    if (!race) continue;
+
+    const raceName = race.raceName ?? race.circuit.circuitName;
+    const session: NormalizedSession = {
+      raceId: wr.raceId,
+      raceName,
+      round: race.round,
+      season,
+      sessionType: wr.sessionType,
+      startLocal: toZonedTime(watchStartUtc, TIMEZONE),
+      startLocalFormatted: toLocalFormatted(watchStartUtc),
+      circuitName: race.circuit.circuitName,
+      circuitCity: race.circuit.city,
+      country: race.circuit.country,
+    };
+
+    const baseKey = `watch_${wr.id}_watch_one_hour_before`;
+    for (const channel of CHANNELS) {
+      const key = `${baseKey}_${channel}`;
+      if (sentSet.has(key)) continue;
+      pending.push({
+        key,
+        channel,
+        session,
+        trigger: "watch_one_hour_before",
+        discordTarget:
+          channel === "discord"
+            ? { channelId: wr.channelId, userId: wr.userId }
+            : undefined,
+      });
     }
   }
 
@@ -168,11 +221,15 @@ export async function getPendingNotifications(): Promise<PendingNotification[]> 
     const lastRaceEndUtc = addHours(lastRaceStartUtc, RACE_END_OFFSET_HOURS);
     const triggerTime = addHours(lastRaceEndUtc, NEXT_RACE_ANNOUNCE_DELAY_HOURS);
     const windowEnd = addMinutes(triggerTime, CHECK_WINDOW_MINUTES);
-    const key = `next_race_after_${lastFinishedRace.raceId}`;
-    if (!sentSet.has(key) && now >= triggerTime && now < windowEnd) {
+    if (now >= triggerTime && now < windowEnd) {
       const nextSession = normalizeSession(nextRace, season, "race");
       if (nextSession) {
-        pending.push({ key, session: nextSession, trigger: "next_race_after" });
+        const baseKey = `next_race_after_${lastFinishedRace.raceId}`;
+        for (const channel of CHANNELS) {
+          const key = `${baseKey}_${channel}`;
+          if (sentSet.has(key)) continue;
+          pending.push({ key, channel, session: nextSession, trigger: "next_race_after" });
+        }
       }
     }
   }

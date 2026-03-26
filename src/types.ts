@@ -69,8 +69,16 @@ export interface ApiCurrentNextResponse {
 /** Session type for notifications (qualifying, race, sprint qualifying, sprint race) */
 export type SessionType = "qualy" | "race" | "sprintQualy" | "sprintRace";
 
+/** Where to deliver a notification */
+export type NotificationChannel = "discord" | "email";
+
 /** Notification trigger type */
-export type NotificationTrigger = "day_before" | "day_of" | "one_hour_before" | "next_race_after";
+export type NotificationTrigger =
+  | "day_before"
+  | "day_of"
+  | "one_hour_before"
+  | "next_race_after"
+  | "watch_one_hour_before";
 
 /** Normalized session with start time in local (CST) for scheduling */
 export interface NormalizedSession {
@@ -90,9 +98,17 @@ export interface NormalizedSession {
 
 /** One notification to send: session + trigger */
 export interface PendingNotification {
+  /** Unique dedup key (channel-specific) */
   key: string;
+  channel: NotificationChannel;
   session: NormalizedSession;
   trigger: NotificationTrigger;
+
+  /** Optional per-notification Discord delivery info (used for custom watch reminders). */
+  discordTarget?: {
+    channelId: string;
+    userId?: string;
+  };
 }
 
 /** Persisted sent-notification record (for dedup) */
