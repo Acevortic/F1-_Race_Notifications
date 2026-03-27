@@ -65,6 +65,36 @@ npm run build
 npm start
 ```
 
+If you use a local `.env` file, run with Node's env-file flag:
+
+```bash
+node --env-file=.env dist/index.js
+```
+
+### 4. Trigger test notifications on demand
+
+To send one immediate test notification to each configured channel (Discord webhook + email) at startup:
+
+```bash
+npm run test:notify
+```
+
+This uses `SEND_TEST_NOTIFICATION_ON_START=1` and does not mark test keys in `sent.json`, so it is safe for repeated smoke tests.
+
+### 5. Bot connectivity quick-check
+
+If replies appear ignored, send this in the same Discord channel:
+
+```text
+!ping
+```
+
+The bot should reply `pong`.
+
+Optional debug logs:
+
+- Set `DEBUG_DISCORD_BOT=1` to log each `messageCreate` event the bot sees.
+
 The process runs indefinitely and checks every **15 minutes** whether any reminder is due; when it is, it sends Discord and/or email and records it so it won’t send again.
 
 ## Deploy to Railway

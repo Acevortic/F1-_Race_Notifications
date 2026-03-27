@@ -7,6 +7,7 @@ import type { PendingNotification, SessionType } from "./types.js";
 import { discordEmbed } from "./formatter.js";
 
 const TIMEZONE = process.env.TIMEZONE ?? "America/Chicago";
+const DEBUG_DISCORD_BOT = process.env.DEBUG_DISCORD_BOT === "1";
 
 const SESSION_LABELS: Record<SessionType, string> = {
   qualy: "Qualifying",
@@ -47,7 +48,7 @@ function parseReminderKeyFromFooter(
 ): { raceId: string; sessionType: SessionType } | null {
   // PendingNotification.key is channel-specific: `${raceId}_${sessionType}_${trigger}_${channel}`
   const re =
-    /^(?<raceId>.+)_(?<sessionType>qualy|race|sprintQualy|sprintRace)_(?<trigger>day_before|day_of|one_hour_before|next_race_after)_(?<channel>discord|email)$/;
+    /^(?<raceId>.+)_(?<sessionType>qualy|race|sprintQualy|sprintRace)_(?<trigger>day_before|day_of|one_hour_before|next_race_after|watch_one_hour_before)_(?<channel>discord|email)$/;
   const m = footerText.trim().match(re);
   if (!m || !m.groups) return null;
   const raceId = m.groups.raceId as string;
@@ -92,7 +93,7 @@ export async function startDiscordBot(): Promise<void> {
   });
 
   const readyPromise = new Promise<void>((resolve) => {
-    client?.once("ready", () => {
+    client?.once("clientReady", () => {
       ready = true;
       console.log("Discord bot ready");
       resolve();
@@ -101,19 +102,49 @@ export async function startDiscordBot(): Promise<void> {
 
   client.on("messageCreate", async (message) => {
     if (message.author.bot) return;
+
+    if (DEBUG_DISCORD_BOT) {
+      console.log(
+        `Discord messageCreate: guild=${message.guildId ?? "dm"} channel=${message.channelId} reference=${message.reference?.messageId ?? "none"}`
+      );
+    }
+
+    if (message.content.trim().toLowerCase() === "!ping") {
+      await message.reply("pong");
+      return;
+    }
+
     if (!message.reference?.messageId) return;
 
     // Fetch the message being replied to (so we can read its embed footer key).
-    const replied = await message.channel.messages
-      .fetch(message.reference.messageId)
-      .catch(() => null);
-    if (!replied) return;
+    const replied =
+      (await message.fetchReference().catch(() => null)) ??
+      (await message.channel.messages.fetch(message.reference.messageId).catch(() => null));
+    if (!replied) {
+      console.warn("Discord reply ignored: could not fetch referenced message");
+      await message.reply(
+        "I couldn't read the message you replied to. Please reply directly to the reminder message."
+      );
+      return;
+    }
 
     const footerText = getFooterText(replied);
-    if (!footerText) return;
+    if (!footerText) {
+      console.warn("Discord reply ignored: referenced message had no footer key");
+      await message.reply(
+        "That message is missing reminder metadata. Please reply to a newly sent reminder message."
+      );
+      return;
+    }
 
     const parsed = parseReminderKeyFromFooter(footerText);
-    if (!parsed) return;
+    if (!parsed) {
+      console.warn(`Discord reply ignored: unrecognized footer key format: ${footerText}`);
+      await message.reply(
+        "I couldn't parse the reminder metadata. Please reply to a newly sent reminder message."
+      );
+      return;
+    }
 
     const watchTime = parseWatchTime(message.content);
     if (!watchTime) {
