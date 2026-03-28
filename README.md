@@ -55,6 +55,7 @@ cp .env.example .env
 | `F1_SEASON`           | Optional  | Season year (default: current year) |
 | `DATA_DIR`            | Optional  | Directory for `sent.json` (default: `./data`) |
 | `WATCH_PRUNE_DAYS`    | Optional | How long to keep stored watch-time replies (default `14`) |
+| `DEBUG_SCHEDULER`     | Optional | Set to `1` to log `TIMEZONE`, current time, and Japan GP qualy/race 9am trigger times each scheduler run |
 
 You can enable only Discord, only email, or both.
 

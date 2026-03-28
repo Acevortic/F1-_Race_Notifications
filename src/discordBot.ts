@@ -2,6 +2,7 @@ import { Client, GatewayIntentBits, Partials, EmbedBuilder, type Message } from 
 import { formatInTimeZone } from "date-fns-tz";
 import { fromZonedTime } from "date-fns-tz";
 import { getSeasonSchedule, getSeasonYear } from "./api.js";
+import { parseUtcSlot } from "./utcSlot.js";
 import { upsertWatchRecord } from "./watchStore.js";
 import type { PendingNotification, SessionType } from "./types.js";
 import { discordEmbed } from "./formatter.js";
@@ -18,13 +19,6 @@ const SESSION_LABELS: Record<SessionType, string> = {
 
 let client: Client | null = null;
 let ready = false;
-
-function parseUtcSlot(dateStr: string | null, timeStr: string | null): Date | null {
-  if (!dateStr || !timeStr) return null;
-  const iso = `${dateStr}T${timeStr}`;
-  const d = new Date(iso);
-  return Number.isNaN(d.getTime()) ? null : d;
-}
 
 function getTimeZoneAbbrev(date: Date): string {
   return (

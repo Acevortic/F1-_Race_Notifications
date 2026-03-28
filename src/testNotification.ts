@@ -8,6 +8,7 @@ function buildTestSession() {
     round: 0,
     season: now.getFullYear(),
     sessionType: "race" as const,
+    startUtc: now,
     startLocal: now,
     startLocalFormatted: now.toLocaleString("en-US", {
       hour: "numeric",

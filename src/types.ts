@@ -80,16 +80,18 @@ export type NotificationTrigger =
   | "next_race_after"
   | "watch_one_hour_before";
 
-/** Normalized session with start time in local (CST) for scheduling */
+/** Normalized session: true UTC instant for scheduling; local fields for display */
 export interface NormalizedSession {
   raceId: string;
   raceName: string;
   round: number;
   season: number;
   sessionType: SessionType;
-  /** Session start time in local timezone (Date object, for comparison) */
+  /** Session start as real UTC instant (use for arithmetic / triggers) */
+  startUtc: Date;
+  /** Legacy: zoned Date for display helpers; do not use addHours/formatInTimeZone on this */
   startLocal: Date;
-  /** Formatted time string in local (e.g. "1:00 AM CST") */
+  /** Formatted time string in TIMEZONE (e.g. "1:00 AM CST") */
   startLocalFormatted: string;
   circuitName: string;
   circuitCity: string;

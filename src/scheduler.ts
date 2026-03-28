@@ -3,11 +3,12 @@
  * check triggers, and handle dedup with sent.json.
  */
 
-import { format, addHours, addMinutes, subDays } from "date-fns";
+import { format, addHours, addMinutes } from "date-fns";
 import { toZonedTime, fromZonedTime, formatInTimeZone } from "date-fns-tz";
 import { readFile, writeFile, mkdir } from "fs/promises";
 import { join } from "path";
 import { getSeasonSchedule, getSeasonYear } from "./api.js";
+import { parseUtcSlot } from "./utcSlot.js";
 import { loadWatchRecords } from "./watchStore.js";
 import type {
   ApiRace,
@@ -28,6 +29,7 @@ const DAY_REMINDER_HOUR = 9;
 const PRUNE_DAYS = 7;
 const RACE_END_OFFSET_HOURS = 2;
 const NEXT_RACE_ANNOUNCE_DELAY_HOURS = 1;
+const DEBUG_SCHEDULER = process.env.DEBUG_SCHEDULER === "1";
 
 const SESSION_TYPES: { key: keyof ApiRace["schedule"]; type: SessionType }[] = [
   { key: "qualy", type: "qualy" },
@@ -38,11 +40,15 @@ const SESSION_TYPES: { key: keyof ApiRace["schedule"]; type: SessionType }[] = [
 
 const CHANNELS: NotificationChannel[] = ["discord", "email"];
 
-function parseUtcSlot(dateStr: string | null, timeStr: string | null): Date | null {
-  if (!dateStr || !timeStr) return null;
-  const iso = `${dateStr}T${timeStr}`;
-  const d = new Date(iso);
-  return Number.isNaN(d.getTime()) ? null : d;
+/** Shift a calendar yyyy-MM-dd by delta days using UTC date math (Gregorian). */
+function addCalendarDaysToYmd(ymd: string, deltaDays: number): string {
+  const [y, m, d] = ymd.split("-").map(Number);
+  const base = Date.UTC(y, m - 1, d);
+  const shifted = new Date(base + deltaDays * 86400000);
+  const yy = shifted.getUTCFullYear();
+  const mm = String(shifted.getUTCMonth() + 1).padStart(2, "0");
+  const dd = String(shifted.getUTCDate()).padStart(2, "0");
+  return `${yy}-${mm}-${dd}`;
 }
 
 function toLocalFormatted(utcDate: Date): string {
@@ -72,6 +78,7 @@ function normalizeSession(
     round: race.round,
     season,
     sessionType,
+    startUtc,
     startLocal,
     startLocalFormatted: toLocalFormatted(startUtc),
     circuitName: race.circuit.circuitName,
@@ -84,21 +91,16 @@ function baseNotificationKey(raceId: string, sessionType: SessionType, trigger: 
   return `${raceId}_${sessionType}_${trigger}`;
 }
 
-/** 9:00 AM in TIMEZONE on the calendar day (session day + dayOffset). dayOffset 0 = day of session, -1 = day before. Returns UTC Date. */
-function dayReminderTimeUtc(sessionStartLocal: Date, dayOffset: number): Date {
-  const dateStr = formatInTimeZone(sessionStartLocal, TIMEZONE, "yyyy-MM-dd");
-  const [y, m, d] = dateStr.split("-").map(Number);
-  const sessionDay = new Date(y, m - 1, d);
-  const target = subDays(sessionDay, -dayOffset);
-  const nineAm = new Date(
-    target.getFullYear(),
-    target.getMonth(),
-    target.getDate(),
-    DAY_REMINDER_HOUR,
-    0,
-    0
-  );
-  return fromZonedTime(nineAm, TIMEZONE);
+/**
+ * 9:00 AM in TIMEZONE on a calendar day relative to the session’s date in TIMEZONE.
+ * `daysBackFromSessionDay`: 0 = same calendar day as session; 1 = one calendar day before session day.
+ * Returns UTC instant for that local 9am (server TZ-independent).
+ */
+function dayReminderTimeUtc(sessionStartUtc: Date, daysBackFromSessionDay: number): Date {
+  const sessionYmd = formatInTimeZone(sessionStartUtc, TIMEZONE, "yyyy-MM-dd");
+  const targetYmd = addCalendarDaysToYmd(sessionYmd, -daysBackFromSessionDay);
+  const hh = String(DAY_REMINDER_HOUR).padStart(2, "0");
+  return fromZonedTime(`${targetYmd}T${hh}:00:00`, TIMEZONE);
 }
 
 /**
@@ -121,14 +123,39 @@ export async function getPendingNotifications(): Promise<PendingNotification[]> 
   const racesByRound = [...races].sort((a, b) => a.round - b.round);
   const raceById = new Map(racesByRound.map((r) => [r.raceId, r]));
 
+  if (DEBUG_SCHEDULER) {
+    const nowLocal = formatInTimeZone(now, TIMEZONE, "yyyy-MM-dd HH:mm:ss zzz");
+    console.log(`[DEBUG_SCHEDULER] TIMEZONE=${TIMEZONE} now=${nowLocal}`);
+    const japanRace =
+      racesByRound.find(
+        (r) =>
+          r.circuit.country === "Japan" ||
+          (r.raceName?.toLowerCase().includes("japan") ?? false) ||
+          r.raceId.toLowerCase().includes("japan")
+      ) ?? racesByRound[0];
+    if (japanRace) {
+      for (const st of ["qualy", "race"] as const) {
+        const session = normalizeSession(japanRace, season, st);
+        if (!session) continue;
+        const dayBeforeTrigger = dayReminderTimeUtc(session.startUtc, 1);
+        const dayOfTrigger = dayReminderTimeUtc(session.startUtc, 0);
+        console.log(
+          `[DEBUG_SCHEDULER] ${japanRace.raceId} ${st} startLocalFormatted=${session.startLocalFormatted} ` +
+            `day_before_9am=${formatInTimeZone(dayBeforeTrigger, TIMEZONE, "yyyy-MM-dd HH:mm")} ` +
+            `day_of_9am=${formatInTimeZone(dayOfTrigger, TIMEZONE, "yyyy-MM-dd HH:mm")}`
+        );
+      }
+    }
+  }
+
   for (const race of racesByRound) {
     for (const { key: scheduleKey, type: sessionType } of SESSION_TYPES) {
       const session = normalizeSession(race, season, sessionType);
       if (!session) continue;
 
-      const dayBeforeTrigger = dayReminderTimeUtc(session.startLocal, -1);
-      const dayOfTrigger = dayReminderTimeUtc(session.startLocal, 0);
-      const oneHourBeforeTrigger = addHours(session.startLocal, -1);
+      const dayBeforeTrigger = dayReminderTimeUtc(session.startUtc, 1);
+      const dayOfTrigger = dayReminderTimeUtc(session.startUtc, 0);
+      const oneHourBeforeTrigger = addHours(session.startUtc, -1);
 
       const triggers: { trigger: NotificationTrigger; triggerTime: Date }[] = [
         { trigger: "day_before", triggerTime: dayBeforeTrigger },
@@ -171,6 +198,7 @@ export async function getPendingNotifications(): Promise<PendingNotification[]> 
       round: race.round,
       season,
       sessionType: wr.sessionType,
+      startUtc: watchStartUtc,
       startLocal: toZonedTime(watchStartUtc, TIMEZONE),
       startLocalFormatted: toLocalFormatted(watchStartUtc),
       circuitName: race.circuit.circuitName,
